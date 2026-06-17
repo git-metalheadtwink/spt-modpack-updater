@@ -1,0 +1,77 @@
+name: Release
+
+# Trigger: push a tag like `v1.0.0` or `v1.2.3`
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: write  # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # Only cache the downloaded registry — not the build artifacts,
+      # which avoids stale-cache edge cases that can hide the final exe.
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+
+      # Write updater-config.json from repository secrets.
+      # Only MODPACK_REMOTE_URL is truly sensitive; branch/name have defaults.
+      - name: Write build config
+        shell: pwsh
+        env:
+          MODPACK_REMOTE_URL: ${{ secrets.MODPACK_REMOTE_URL }}
+          MODPACK_BRANCH: ${{ secrets.MODPACK_BRANCH }}
+          MODPACK_NAME: ${{ secrets.MODPACK_NAME }}
+        run: |
+          $branch = if ($env:MODPACK_BRANCH) { $env:MODPACK_BRANCH } else { "main" }
+          $name   = if ($env:MODPACK_NAME)   { $env:MODPACK_NAME   } else { "SPT Modpack" }
+          [ordered]@{
+            remote_url   = $env:MODPACK_REMOTE_URL
+            branch       = $branch
+            modpack_name = $name
+          } | ConvertTo-Json | Set-Content updater-config.json -Encoding utf8NoBOM
+          Write-Output "Config written (remote URL redacted)"
+
+      - name: Build release binary
+        shell: pwsh
+        run: cargo build --release
+        env:
+          CARGO_TERM_COLOR: always
+
+      - name: Generate SHA256 checksum
+        shell: pwsh
+        run: |
+          $exe = "${{ github.workspace }}\target-CLI\release\spt-modpack-updater.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Binary not found: $exe"
+            exit 1
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  spt-modpack-updater.exe" | Set-Content sha256sums.txt -Encoding ascii
+          Write-Output "SHA256: $hash"
+
+      # Creates the GitHub Release and attaches both files.
+      # Release notes are auto-generated from commits since the previous tag.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target-CLI/release/spt-modpack-updater.exe
+            sha256sums.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
