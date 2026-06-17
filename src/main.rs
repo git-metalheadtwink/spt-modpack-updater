@@ -27,6 +27,7 @@ mod spt;
 mod tui;
 mod types;
 mod ui;
+mod updater;
 
 mod build_cfg {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
@@ -93,6 +94,9 @@ fn main() -> Result<()> {
     if !is_spt_folder(&game_path) {
         abort_not_spt(&game_path);
     }
+
+    // Remove any leftover .old / .tmp files from a previous self-update.
+    updater::cleanup_old_exe();
 
     let spt_version = spt::detect_spt_version(&game_path).ok();
     let initial_branch = load_branch(&game_path);

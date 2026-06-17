@@ -12,6 +12,7 @@ A lightweight Windows TUI app that keeps an SPT (Single Player Tarkov) modpack i
 - **Protected files** — `BepInEx/config/BepInEx.cfg` and the Configuration Manager cfg survive every reset/clean automatically
 - **SPT folder guard** — Refuses to run outside a valid SPT installation (requires `EscapeFromTarkov.exe` + `BepInEx/` or `SPT/`)
 - **Safe quit** — Pressing Esc during an active operation asks for confirmation before exiting
+- **Self-updating** — Checks GitHub Releases on every launch; downloads and installs newer versions automatically before handing off to the new binary
 - **No flicker** — Built on [ratatui](https://github.com/ratatui-org/ratatui) with double-buffered rendering
 
 ---
@@ -71,6 +72,15 @@ cargo build --release
 The release binary will be at `target/release/spt-modpack-updater.exe`.
 
 > `updater-config.json` must exist before building — `build.rs` reads it to bake the remote URL and branch into the binary.
+
+### Releasing a new version
+
+1. Bump `version` in `Cargo.toml` (e.g. `1.0.0` → `1.1.0`)
+2. `cargo build --release`
+3. Create a GitHub Release with a tag matching the version (e.g. `v1.1.0`)
+4. Upload `target/release/spt-modpack-updater.exe` as a release asset named exactly `spt-modpack-updater.exe`
+
+Users running v1.0.0 will be prompted to update automatically on next launch.
 
 ---
 

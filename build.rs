@@ -42,10 +42,13 @@ fn main() {
 
         // Version info (set_resource_file would silently ignore set_manifest_file,
         // so we set these fields through the winres API instead)
+        let pkg_version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "1.0.0".into());
+        let win_version = format!("{}.0", pkg_version);
+
         res.set("FileDescription",  "SPT Modpack Updater");
         res.set("ProductName",      "SPT Modpack Updater");
-        res.set("FileVersion",      "1.0.0.0");
-        res.set("ProductVersion",   "1.0.0.0");
+        res.set("FileVersion",      &win_version);
+        res.set("ProductVersion",   &win_version);
         res.set("InternalName",     "spt-modpack-updater");
         res.set("OriginalFilename", "spt-modpack-updater.exe");
         res.set("CompanyName",      "MetalheadTwink");

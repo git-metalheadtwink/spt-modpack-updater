@@ -45,6 +45,7 @@ enum Mode {
     Running { is_user_op: bool },
     SelectBranch { branches: Vec<String>, sel: usize },
     Done(bool),
+    SelfUpdatePrompt { version: String, url: String },
 }
 
 struct App {
@@ -58,10 +59,12 @@ struct App {
     progress:    f64,
     phase:       String,
     log:         VecDeque<String>,
-    tick:        u64,
-    confirm_quit: bool,
-    rx:          Receiver<ProgressEvent>,
-    tx:          Sender<ProgressEvent>,
+    tick:                  u64,
+    confirm_quit:          bool,
+    pending_self_update:   Option<(String, String)>,
+    self_update_in_progress: bool,
+    rx:                    Receiver<ProgressEvent>,
+    tx:                    Sender<ProgressEvent>,
 }
 
 impl App {
@@ -77,8 +80,10 @@ impl App {
             progress:    0.0,
             phase:       "Checking for updates...".into(),
             log:         VecDeque::new(),
-            tick:        0,
-            confirm_quit: false,
+            tick:                    0,
+            confirm_quit:            false,
+            pending_self_update:     None,
+            self_update_in_progress: false,
             rx,
             tx,
         }
@@ -106,6 +111,10 @@ impl App {
                 }
                 ProgressEvent::Done => {
                     self.progress = 1.0;
+                    if self.self_update_in_progress {
+                        // New exe is in place — relaunch diverges, never returns.
+                        crate::updater::relaunch();
+                    }
                     self.mode = match &self.mode {
                         Mode::Running { is_user_op: true } => Mode::Done(true),
                         _ => Mode::Idle,
@@ -113,14 +122,24 @@ impl App {
                 }
                 ProgressEvent::Error(e) => {
                     self.log_push(format!("Error: {}", e));
+                    self.self_update_in_progress = false;
                     if matches!(self.mode, Mode::Running { is_user_op: true }) {
                         self.mode = Mode::Done(false);
                     } else {
-                        // Surface background-op errors in the status bar
                         self.status = UpdateStatus::Error(e);
                         self.mode = Mode::Idle;
                     }
                 }
+                ProgressEvent::SelfUpdateAvailable { version, url } => {
+                    self.pending_self_update = Some((version, url));
+                }
+            }
+        }
+
+        // Show the self-update prompt as soon as we become idle.
+        if self.mode == Mode::Idle {
+            if let Some((version, url)) = self.pending_self_update.take() {
+                self.mode = Mode::SelfUpdatePrompt { version, url };
             }
         }
     }
@@ -172,6 +191,18 @@ impl App {
                 KeyCode::Esc => return true,
                 _ => {}
             },
+            Mode::SelfUpdatePrompt { url, .. } => {
+                let url = url.clone();
+                match code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                        self.start_self_update(url);
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                        self.mode = Mode::Idle;
+                    }
+                    _ => {}
+                }
+            }
         }
         false
     }
@@ -213,6 +244,21 @@ impl App {
         self.phase = "Checking for updates...".into();
         self.mode  = Mode::Running { is_user_op: false };
         std::thread::spawn(move || crate::git::run_check_update(&path, &new_branch, &tx));
+    }
+
+    fn start_self_update(&mut self, url: String) {
+        self.op_name                 = "SELF-UPDATE".into();
+        self.phase                   = "Downloading...".into();
+        self.progress                = 0.0;
+        self.log.clear();
+        self.mode                    = Mode::Running { is_user_op: true };
+        self.self_update_in_progress = true;
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = crate::updater::download_and_replace(&url, &tx) {
+                let _ = tx.send(ProgressEvent::Error(e.to_string()));
+            }
+        });
     }
 }
 
@@ -269,8 +315,20 @@ fn draw_main(f: &mut Frame, app: &App, dimmed: bool) {
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_c))
-        .title(Span::styled(" SPT MODPACK UPDATER ", Style::default().fg(border_c)))
-        .title_alignment(Alignment::Center);
+        .title_top(
+            Line::from(vec![Span::styled(
+                " SPT MODPACK UPDATER ",
+                Style::default().fg(border_c),
+            )])
+            .alignment(Alignment::Center),
+        )
+        .title_bottom(
+            Line::from(vec![Span::styled(
+                format!(" v{} ", env!("CARGO_PKG_VERSION")),
+                Style::default().fg(border_c),
+            )])
+            .alignment(Alignment::Right),
+        );
 
     let inner = outer.inner(area);
     f.render_widget(outer, area);
@@ -384,7 +442,9 @@ fn draw_main(f: &mut Frame, app: &App, dimmed: bool) {
 
     // [6] bottom hint line
     {
-        let text = if dimmed {
+        let text = if matches!(app.mode, Mode::SelfUpdatePrompt { .. }) {
+            ""
+        } else if dimmed {
             "  (operation in progress)"
         } else {
             match &app.mode {
@@ -543,6 +603,81 @@ fn draw_popup(f: &mut Frame, app: &App) {
     }
 }
 
+// ── self-update prompt ────────────────────────────────────────────────────────
+
+fn draw_self_update_prompt(f: &mut Frame, app: &App) {
+    let Mode::SelfUpdatePrompt { version, .. } = &app.mode else { return };
+
+    let area = f.area();
+    let w = 58u16.min(area.width);
+    let h = 8u16.min(area.height);
+    let popup = Rect {
+        x:      area.x + (area.width.saturating_sub(w)) / 2,
+        y:      area.y + (area.height.saturating_sub(h)) / 2,
+        width:  w,
+        height: h,
+    };
+
+    f.render_widget(Clear, popup);
+
+    let border = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PINK))
+        .title(Span::styled(
+            " Update Available ",
+            Style::default().fg(PINK).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+
+    let inner = border.inner(popup);
+    f.render_widget(border, popup);
+
+    if inner.height < 4 { return; }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // new version
+            Constraint::Length(1), // current version
+            Constraint::Min(1),    // spacer
+            Constraint::Length(1), // buttons
+        ])
+        .split(inner);
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("  New version v{} is available!", version),
+            Style::default().fg(Color::White),
+        )),
+        rows[1],
+    );
+
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            format!("  Currently running v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(DIM),
+        )),
+        rows[2],
+    );
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                " [ Y ] Update & relaunch ",
+                Style::default().bg(PINK).fg(Color::Black).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("   "),
+            Span::styled(
+                " [ N ] Skip ",
+                Style::default().bg(DIM).fg(Color::Black).add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .alignment(Alignment::Center),
+        rows[4],
+    );
+}
+
 // ── confirm-quit dialog ───────────────────────────────────────────────────────
 
 fn draw_confirm(f: &mut Frame) {
@@ -604,10 +739,15 @@ fn draw_confirm(f: &mut Frame) {
 // ── top-level draw ────────────────────────────────────────────────────────────
 
 fn ui(f: &mut Frame, app: &App) {
-    let show_popup = matches!(app.mode, Mode::Running { is_user_op: true } | Mode::Done(_));
-    draw_main(f, app, show_popup);
+    let show_popup          = matches!(app.mode, Mode::Running { is_user_op: true } | Mode::Done(_));
+    let show_update_prompt  = matches!(app.mode, Mode::SelfUpdatePrompt { .. });
+    let dimmed              = show_popup || show_update_prompt;
+    draw_main(f, app, dimmed);
     if show_popup {
         draw_popup(f, app);
+    }
+    if show_update_prompt {
+        draw_self_update_prompt(f, app);
     }
     if app.confirm_quit {
         draw_confirm(f);
@@ -619,6 +759,11 @@ fn ui(f: &mut Frame, app: &App) {
 pub fn run(cfg: Config) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel::<ProgressEvent>();
     let mut app  = App::new(cfg, rx, tx.clone());
+
+    {
+        let tx2 = tx.clone();
+        std::thread::spawn(move || crate::updater::check_self_update(&tx2));
+    }
 
     {
         let path   = app.game_path.clone();

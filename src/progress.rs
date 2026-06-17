@@ -8,4 +8,5 @@ pub enum ProgressEvent {
     BranchList(Vec<String>),
     Done,
     Error(String),
+    SelfUpdateAvailable { version: String, url: String },
 }
