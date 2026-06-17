@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
 
-#[allow(dead_code)]
 include!(concat!(env!("OUT_DIR"), "/config.rs"));
 
 const PROTECTED: &[&str] = &[

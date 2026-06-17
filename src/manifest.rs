@@ -4,12 +4,12 @@ use std::{fs, path::Path};
 
 #[derive(Debug, Deserialize)]
 pub struct Manifest {
-    pub name: String,
-    pub description: String,
-    pub spt_version: String,
-    pub author: Option<String>,
-    pub website: Option<String>,
-    pub changelog: Vec<String>,
+    #[allow(dead_code)] pub name:        String,
+    pub description:                     String,
+    #[allow(dead_code)] pub spt_version: String,
+    #[allow(dead_code)] pub author:      Option<String>,
+    #[allow(dead_code)] pub website:     Option<String>,
+    pub changelog:                       Vec<String>,
 }
 
 pub fn read_manifest(path: &Path) -> Result<Manifest> {

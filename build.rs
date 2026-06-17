@@ -27,10 +27,9 @@ fn main() {
 
     let content = format!(
         r#"
-pub const DEFAULT_REMOTE: &str = "{}";
-pub const DEFAULT_BRANCH: &str = "{}";
-#[allow(dead_code)]
-pub const MODPACK_NAME: &str = "{}";
+#[allow(dead_code)] pub const DEFAULT_REMOTE: &str = "{}";
+#[allow(dead_code)] pub const DEFAULT_BRANCH: &str = "{}";
+#[allow(dead_code)] pub const MODPACK_NAME:   &str = "{}";
 "#,
         remote_url, branch, modpack_name
     );
@@ -50,6 +49,9 @@ pub const MODPACK_NAME: &str = "{}";
         res.set("InternalName",     "spt-modpack-updater");
         res.set("OriginalFilename", "spt-modpack-updater.exe");
         res.set("CompanyName",      "MetalheadTwink");
+
+        // Icon appears on both the exe file and the console window title bar.
+        res.set_icon("icon.ico");
 
         // Embedding this manifest tells Windows the exe is NOT an installer and
         // does not need elevation, which suppresses both the PCA dialog and UAC.

@@ -23,12 +23,11 @@ unsafe extern "system" fn ctrl_handler(_ctrl_type: u32) -> i32 {
 mod git;
 mod manifest;
 mod progress;
+mod spt;
 mod tui;
 mod types;
 mod ui;
-mod spt;
 
-#[allow(dead_code)]
 mod build_cfg {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
