@@ -1,0 +1,9 @@
+/target
+/target-standalone/
+/target-CLI/
+
+/.idea/
+/Cargo.lock
+updater-config.json
+*.exe
+

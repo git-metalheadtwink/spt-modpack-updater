@@ -1,0 +1,10 @@
+manifest.json
+
+BepInEx/plugins/spt/**
+BepInEx/core/**
+BepInEx/patchers/**
+BepInEx/cache/**
+
+*.log
+
+updater/**
