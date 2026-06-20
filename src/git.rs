@@ -201,6 +201,13 @@ pub fn run_update(path: &Path, branch: &str, tx: &Sender<ProgressEvent>) {
         }
     }
 
+    // Refresh the status bar so it shows "Up to date" instead of "Update available".
+    if let Ok(hash) = run_git(path, &["rev-parse", "HEAD"]) {
+        let _ = tx.send(ProgressEvent::StatusResult(
+            UpdateStatus::UpToDate { hash: hash.trim().to_string() },
+        ));
+    }
+
     let _ = tx.send(ProgressEvent::Done);
 }
 
